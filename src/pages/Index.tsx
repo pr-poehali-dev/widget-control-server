@@ -10,70 +10,174 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import Icon from '@/components/ui/icon';
 
+interface Message {
+  id: string;
+  userId: string;
+  message: string;
+  timestamp: string;
+  status: 'pending' | 'processing' | 'sent_to_ai' | 'ai_responded' | 'sent_to_user';
+  aiResponse?: string;
+  processingTime?: number;
+}
+
+interface APIRequest {
+  id: string;
+  endpoint: string;
+  method: string;
+  body: any;
+  timestamp: string;
+  status: 'received' | 'processing' | 'completed' | 'error';
+  response?: any;
+}
+
 const Index = () => {
-  const [isWidgetActive, setIsWidgetActive] = useState(true);
-  const [apiKey, setApiKey] = useState('sk-proj-...');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [apiRequests, setApiRequests] = useState<APIRequest[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [apiKey, setApiKey] = useState('sk-proj-***');
   const [selectedModel, setSelectedModel] = useState('gpt-4');
+  const [systemPrompt, setSystemPrompt] = useState('Ты помощник службы поддержки. Отвечай кратко и полезно.');
+  const [autoResponse, setAutoResponse] = useState(true);
   
-  const mockAnalytics = {
-    totalChats: 1247,
-    activeWidgets: 5,
-    avgResponseTime: '2.3s',
-    satisfactionRate: 92
+  // Симуляция получения сообщений по API
+  const simulateIncomingMessage = () => {
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      userId: `user_${Math.floor(Math.random() * 1000)}`,
+      message: [
+        'Как оформить возврат товара?',
+        'Проблема с оплатой картой',
+        'Когда поступит заказ?',
+        'Можно ли изменить адрес доставки?',
+        'Где посмотреть статус заказа?'
+      ][Math.floor(Math.random() * 5)],
+      timestamp: new Date().toISOString(),
+      status: 'pending'
+    };
+    
+    setMessages(prev => [newMessage, ...prev]);
+    
+    // Симуляция API запроса
+    const apiReq: APIRequest = {
+      id: Date.now().toString(),
+      endpoint: '/api/v1/messages',
+      method: 'POST',
+      body: {
+        user_id: newMessage.userId,
+        message: newMessage.message,
+        widget_id: 'widget_123'
+      },
+      timestamp: new Date().toISOString(),
+      status: 'received'
+    };
+    
+    setApiRequests(prev => [apiReq, ...prev]);
+    
+    // Автоматическая обработка если включена
+    if (autoResponse) {
+      setTimeout(() => processMessage(newMessage.id), 1000);
+    }
+  };
+  
+  // Обработка сообщения и отправка к ИИ
+  const processMessage = async (messageId: string) => {
+    setIsProcessing(true);
+    
+    // Обновляем статус сообщения
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId ? { ...msg, status: 'processing' } : msg
+    ));
+    
+    // Симуляция отправки к ИИ
+    setTimeout(() => {
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId ? { ...msg, status: 'sent_to_ai' } : msg
+      ));
+      
+      // Симуляция ответа ИИ
+      setTimeout(() => {
+        const aiResponse = generateAIResponse(prev => prev.find(m => m.id === messageId)?.message || '');
+        
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId ? { 
+            ...msg, 
+            status: 'ai_responded', 
+            aiResponse,
+            processingTime: Math.floor(Math.random() * 3000) + 1000
+          } : msg
+        ));
+        
+        // Отправка ответа пользователю
+        setTimeout(() => {
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId ? { ...msg, status: 'sent_to_user' } : msg
+          ));
+          
+          // Обновляем API запрос
+          setApiRequests(prev => prev.map(req => 
+            req.body.message === prev.find(m => m.id === messageId)?.message ? {
+              ...req,
+              status: 'completed',
+              response: {
+                message: aiResponse,
+                processing_time: Math.floor(Math.random() * 3000) + 1000,
+                model: selectedModel
+              }
+            } : req
+          ));
+          
+          setIsProcessing(false);
+        }, 500);
+      }, 2000);
+    }, 1000);
+  };
+  
+  // Генерация ответа ИИ (симуляция)
+  const generateAIResponse = (userMessage: string) => {
+    const responses = {
+      'возврат': 'Для оформления возврата обратитесь в службу поддержки с номером заказа. Возврат возможен в течение 14 дней.',
+      'оплата': 'Проверьте правильность введенных данных карты. Если проблема не решена, обратитесь в банк.',
+      'заказ': 'Статус заказа можно проверить в личном кабинете. Доставка занимает 3-5 рабочих дней.',
+      'доставка': 'Адрес доставки можно изменить до момента отправки заказа в личном кабинете.',
+      'статус': 'Для проверки статуса заказа войдите в личный кабинет или используйте трек-номер.'
+    };
+    
+    for (const [key, response] of Object.entries(responses)) {
+      if (userMessage.toLowerCase().includes(key)) {
+        return response;
+      }
+    }
+    
+    return 'Спасибо за обращение! Наш специалист свяжется с вами в ближайшее время.';
+  };
+  
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'processing': return 'bg-blue-100 text-blue-800';
+      case 'sent_to_ai': return 'bg-purple-100 text-purple-800';
+      case 'ai_responded': return 'bg-green-100 text-green-800';
+      case 'sent_to_user': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+  
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'pending': return 'Ожидает';
+      case 'processing': return 'Обрабатывается';
+      case 'sent_to_ai': return 'Отправлено к ИИ';
+      case 'ai_responded': return 'ИИ ответил';
+      case 'sent_to_user': return 'Отправлено пользователю';
+      default: return 'Неизвестно';
+    }
   };
 
-  const mockWidgets = [
-    {
-      id: 1,
-      name: 'Поддержка клиентов',
-      domain: 'example.com',
-      status: 'active',
-      chats: 234,
-      lastActivity: '2 мин назад'
-    },
-    {
-      id: 2,
-      name: 'Продажи',
-      domain: 'shop.example.com',
-      status: 'inactive',
-      chats: 89,
-      lastActivity: '1 час назад'
-    },
-    {
-      id: 3,
-      name: 'Техподдержка',
-      domain: 'support.example.com',
-      status: 'active',
-      chats: 156,
-      lastActivity: '5 мин назад'
-    }
-  ];
 
-  const mockChats = [
-    {
-      id: 1,
-      user: 'Анна К.',
-      message: 'Как оформить возврат товара?',
-      time: '14:23',
-      status: 'resolved'
-    },
-    {
-      id: 2,
-      user: 'Михаил С.',
-      message: 'Проблема с оплатой картой',
-      time: '14:18',
-      status: 'active'
-    },
-    {
-      id: 3,
-      user: 'Елена В.',
-      message: 'Когда поступит товар?',
-      time: '14:12',
-      status: 'pending'
-    }
-  ];
 
   return (
     <div className="dark min-h-screen bg-background">
@@ -85,302 +189,369 @@ const Index = () => {
               <Icon name="MessageSquare" size={24} className="text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Widget Management Server</h1>
-              <p className="text-sm text-muted-foreground">Управление ИИ-чат виджетами</p>
+              <h1 className="text-2xl font-bold text-foreground">ИИ-агент Сервер</h1>
+              <p className="text-sm text-muted-foreground">Обработка сообщений и интеграция с ИИ</p>
             </div>
           </div>
-          <Badge variant="secondary" className="bg-primary/10 text-primary">
-            <Icon name="Zap" size={16} className="mr-1" />
-            Активен
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant="secondary" className="bg-primary/10 text-primary">
+              <Icon name="Zap" size={16} className="mr-1" />
+              {isProcessing ? 'Обрабатывается' : 'Готов'}
+            </Badge>
+            <Button onClick={simulateIncomingMessage} className="bg-primary hover:bg-primary/90">
+              <Icon name="MessageSquare" size={16} className="mr-2" />
+              Симулировать сообщение
+            </Button>
+          </div>
         </div>
 
-        {/* Analytics Cards */}
+        {/* Analytics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Всего чатов</CardTitle>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold text-foreground">{mockAnalytics.totalChats}</span>
-                <Badge variant="secondary" className="bg-primary/10 text-primary text-xs">
-                  +12%
-                </Badge>
-              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Сообщений обработано</CardTitle>
+              <span className="text-2xl font-bold text-foreground">{messages.length}</span>
             </CardHeader>
           </Card>
           
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Активные виджеты</CardTitle>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold text-foreground">{mockAnalytics.activeWidgets}</span>
-                <Icon name="TrendingUp" size={16} className="text-primary" />
-              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">API запросов</CardTitle>
+              <span className="text-2xl font-bold text-foreground">{apiRequests.length}</span>
             </CardHeader>
           </Card>
           
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Время ответа</CardTitle>
-              <span className="text-2xl font-bold text-foreground">{mockAnalytics.avgResponseTime}</span>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Среднее время ответа</CardTitle>
+              <span className="text-2xl font-bold text-foreground">
+                {messages.filter(m => m.processingTime).length > 0 ? 
+                  `${Math.round(messages.filter(m => m.processingTime).reduce((acc, m) => acc + (m.processingTime || 0), 0) / messages.filter(m => m.processingTime).length / 1000)}s` : 
+                  '0s'
+                }
+              </span>
             </CardHeader>
           </Card>
           
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Удовлетворенность</CardTitle>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold text-foreground">{mockAnalytics.satisfactionRate}%</span>
-                <Icon name="Heart" size={16} className="text-primary" />
-              </div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Успешно обработано</CardTitle>
+              <span className="text-2xl font-bold text-foreground">
+                {messages.filter(m => m.status === 'sent_to_user').length}
+              </span>
             </CardHeader>
           </Card>
         </div>
 
-        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Widget Management */}
+          {/* Message Processing */}
           <div className="lg:col-span-2">
-            <Tabs defaultValue="widgets" className="w-full">
+            <Tabs defaultValue="messages" className="w-full">
               <TabsList className="grid w-full grid-cols-3 bg-muted">
-                <TabsTrigger value="widgets">Виджеты</TabsTrigger>
-                <TabsTrigger value="api">API</TabsTrigger>
-                <TabsTrigger value="settings">Настройки</TabsTrigger>
+                <TabsTrigger value="messages">Сообщения</TabsTrigger>
+                <TabsTrigger value="api">API Логи</TabsTrigger>
+                <TabsTrigger value="config">Конфигурация</TabsTrigger>
               </TabsList>
               
-              <TabsContent value="widgets" className="space-y-4">
+              <TabsContent value="messages" className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-foreground">Управление виджетами</h3>
-                  <Button size="sm" className="bg-primary hover:bg-primary/90">
-                    <Icon name="Plus" size={16} className="mr-2" />
-                    Добавить виджет
-                  </Button>
+                  <h3 className="text-lg font-semibold text-foreground">Обработка сообщений</h3>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-muted-foreground">Автоответ</Label>
+                    <Switch checked={autoResponse} onCheckedChange={setAutoResponse} />
+                  </div>
                 </div>
                 
-                <div className="space-y-3">
-                  {mockWidgets.map((widget) => (
-                    <Card key={widget.id} className="bg-card border-border">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
-                              <Icon name="Bot" size={20} className="text-muted-foreground" />
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-3">
+                    {messages.map((message) => (
+                      <Card key={message.id} className="bg-card border-border">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-8 w-8">
+                                <AvatarFallback className="bg-muted text-muted-foreground">
+                                  {message.userId.slice(-2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-medium text-sm text-foreground">{message.userId}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(message.timestamp).toLocaleTimeString()}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <h4 className="font-medium text-foreground">{widget.name}</h4>
-                              <p className="text-sm text-muted-foreground">{widget.domain}</p>
+                            <div className="flex items-center gap-2">
+                              <Badge className={getStatusColor(message.status)}>
+                                {getStatusText(message.status)}
+                              </Badge>
+                              {message.status === 'pending' && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => processMessage(message.id)}
+                                  disabled={isProcessing}
+                                >
+                                  <Icon name="Play" size={14} className="mr-1" />
+                                  Обработать
+                                </Button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <Badge 
-                              variant={widget.status === 'active' ? 'default' : 'secondary'}
-                              className={widget.status === 'active' ? 'bg-primary text-primary-foreground' : ''}
-                            >
-                              {widget.status === 'active' ? 'Активен' : 'Неактивен'}
-                            </Badge>
-                            <div className="text-right text-sm">
-                              <p className="text-foreground font-medium">{widget.chats} чатов</p>
-                              <p className="text-muted-foreground">{widget.lastActivity}</p>
+                          
+                          <div className="space-y-2">
+                            <div className="bg-muted rounded-lg p-3">
+                              <p className="text-sm text-foreground">
+                                <strong>Пользователь:</strong> {message.message}
+                              </p>
                             </div>
+                            
+                            {message.aiResponse && (
+                              <div className="bg-primary/10 rounded-lg p-3">
+                                <p className="text-sm text-foreground">
+                                  <strong>ИИ-ответ:</strong> {message.aiResponse}
+                                </p>
+                                {message.processingTime && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Время обработки: {message.processingTime}мс
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    
+                    {messages.length === 0 && (
+                      <div className="text-center py-12">
+                        <Icon name="MessageSquare" size={48} className="text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">Нет сообщений</h3>
+                        <p className="text-muted-foreground">Нажмите "Симулировать сообщение" для тестирования</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
               </TabsContent>
               
               <TabsContent value="api" className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground mb-4">API Configuration</h3>
-                  
-                  <Card className="bg-card border-border">
-                    <CardHeader>
-                      <CardTitle className="text-foreground">API Endpoints</CardTitle>
-                      <CardDescription>Используйте эти endpoints для интеграции</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Widget API</Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            value="https://api.widgetserver.com/v1/widget" 
-                            readOnly 
-                            className="bg-muted"
-                          />
-                          <Button variant="outline" size="sm">
-                            <Icon name="Copy" size={16} />
-                          </Button>
-                        </div>
+                <h3 className="text-lg font-semibold text-foreground">API Логи</h3>
+                
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-3">
+                    {apiRequests.map((request) => (
+                      <Card key={request.id} className="bg-card border-border">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <Badge variant="outline" className="font-mono">
+                                {request.method}
+                              </Badge>
+                              <span className="text-sm font-medium text-foreground">
+                                {request.endpoint}
+                              </span>
+                            </div>
+                            <Badge 
+                              className={
+                                request.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                request.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                                request.status === 'error' ? 'bg-red-100 text-red-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }
+                            >
+                              {request.status}
+                            </Badge>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Request Body:</Label>
+                              <pre className="bg-muted rounded p-2 text-xs text-foreground overflow-x-auto">
+                                {JSON.stringify(request.body, null, 2)}
+                              </pre>
+                            </div>
+                            
+                            {request.response && (
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Response:</Label>
+                                <pre className="bg-primary/10 rounded p-2 text-xs text-foreground overflow-x-auto">
+                                  {JSON.stringify(request.response, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <p className="text-xs text-muted-foreground mt-2">
+                            {new Date(request.timestamp).toLocaleString()}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    
+                    {apiRequests.length === 0 && (
+                      <div className="text-center py-12">
+                        <Icon name="Activity" size={48} className="text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">Нет API запросов</h3>
+                        <p className="text-muted-foreground">Логи будут появляться здесь после обработки сообщений</p>
                       </div>
-                      
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Chat API</Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            value="https://api.widgetserver.com/v1/chat" 
-                            readOnly 
-                            className="bg-muted"
-                          />
-                          <Button variant="outline" size="sm">
-                            <Icon name="Copy" size={16} />
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Analytics API</Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            value="https://api.widgetserver.com/v1/analytics" 
-                            readOnly 
-                            className="bg-muted"
-                          />
-                          <Button variant="outline" size="sm">
-                            <Icon name="Copy" size={16} />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                    )}
+                  </div>
+                </ScrollArea>
               </TabsContent>
               
-              <TabsContent value="settings" className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground mb-4">Настройки ИИ-агента</h3>
-                  
-                  <Card className="bg-card border-border">
-                    <CardHeader>
-                      <CardTitle className="text-foreground">Конфигурация модели</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-foreground">API Key</Label>
-                        <Input 
-                          type="password" 
-                          value={apiKey} 
-                          onChange={(e) => setApiKey(e.target.value)}
-                          className="bg-muted"
-                        />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Модель</Label>
-                        <Select value={selectedModel} onValueChange={setSelectedModel}>
-                          <SelectTrigger className="bg-muted">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gpt-4">GPT-4</SelectItem>
-                            <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
-                            <SelectItem value="claude-3">Claude 3</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label className="text-foreground">Системный промпт</Label>
-                        <Textarea 
-                          placeholder="Введите системный промпт для ИИ-агента..."
-                          className="bg-muted min-h-[100px]"
-                        />
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <Label className="text-foreground">Автоответы</Label>
-                        <Switch checked={isWidgetActive} onCheckedChange={setIsWidgetActive} />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+              <TabsContent value="config" className="space-y-4">
+                <h3 className="text-lg font-semibold text-foreground">Конфигурация ИИ</h3>
+                
+                <Card className="bg-card border-border">
+                  <CardHeader>
+                    <CardTitle className="text-foreground">Настройки модели</CardTitle>
+                    <CardDescription>Параметры для обработки сообщений</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-foreground">API Key</Label>
+                      <Input 
+                        type="password" 
+                        value={apiKey} 
+                        onChange={(e) => setApiKey(e.target.value)}
+                        className="bg-muted"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Модель ИИ</Label>
+                      <Select value={selectedModel} onValueChange={setSelectedModel}>
+                        <SelectTrigger className="bg-muted">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gpt-4">GPT-4</SelectItem>
+                          <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
+                          <SelectItem value="claude-3">Claude 3</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Системный промпт</Label>
+                      <Textarea 
+                        value={systemPrompt}
+                        onChange={(e) => setSystemPrompt(e.target.value)}
+                        className="bg-muted min-h-[100px]"
+                        placeholder="Введите системный промпт..."
+                      />
+                    </div>
+                    
+                    <Button className="w-full bg-primary hover:bg-primary/90">
+                      <Icon name="Save" size={16} className="mr-2" />
+                      Сохранить настройки
+                    </Button>
+                  </CardContent>
+                </Card>
               </TabsContent>
             </Tabs>
           </div>
           
-          {/* Right Column - Widget Preview & Recent Chats */}
+          {/* API Info & Status */}
           <div className="space-y-6">
-            {/* Widget Preview */}
+            {/* API Endpoints */}
             <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="text-foreground flex items-center gap-2">
-                  <Icon name="Eye" size={20} />
-                  Превью виджета
+                  <Icon name="Code" size={20} />
+                  API Endpoints
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="bg-muted rounded-lg p-4">
-                  <div className="bg-background rounded-lg p-4 shadow-lg max-w-sm">
-                    <div className="flex items-center gap-3 mb-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src="/api/placeholder/32/32" />
-                        <AvatarFallback className="bg-primary text-primary-foreground">AI</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-sm text-foreground">ИИ-ассистент</p>
-                        <p className="text-xs text-muted-foreground">в сети</p>
-                      </div>
-                    </div>
-                    <Separator className="mb-3" />
-                    <div className="space-y-2">
-                      <div className="bg-muted rounded-lg p-2">
-                        <p className="text-sm text-foreground">Здравствуйте! Чем могу помочь?</p>
-                      </div>
-                      <div className="bg-primary rounded-lg p-2 ml-4">
-                        <p className="text-sm text-primary-foreground">Как оформить заказ?</p>
-                      </div>
-                      <div className="bg-muted rounded-lg p-2">
-                        <p className="text-sm text-foreground">Для оформления заказа перейдите в каталог...</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <Input placeholder="Введите сообщение..." className="text-sm" />
-                      <Button size="sm" className="bg-primary hover:bg-primary/90">
-                        <Icon name="Send" size={16} />
-                      </Button>
-                    </div>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-foreground">Получение сообщений</Label>
+                  <div className="bg-muted rounded-lg p-3">
+                    <code className="text-xs text-foreground">
+                      POST /api/v1/messages
+                    </code>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-foreground">Отправка к ИИ</Label>
+                  <div className="bg-muted rounded-lg p-3">
+                    <code className="text-xs text-foreground">
+                      POST /api/v1/ai/process
+                    </code>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-foreground">Получение ответа</Label>
+                  <div className="bg-muted rounded-lg p-3">
+                    <code className="text-xs text-foreground">
+                      GET /api/v1/messages/{id}/response
+                    </code>
                   </div>
                 </div>
               </CardContent>
             </Card>
             
-            {/* Recent Chats */}
+            {/* Processing Status */}
             <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="text-foreground flex items-center gap-2">
-                  <Icon name="MessageCircle" size={20} />
-                  Последние чаты
+                  <Icon name="Activity" size={20} />
+                  Статус обработки
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {mockChats.map((chat) => (
-                    <div key={chat.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted transition-colors">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-muted text-muted-foreground">
-                          {chat.user.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium text-sm text-foreground">{chat.user}</p>
-                          <span className="text-xs text-muted-foreground">{chat.time}</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground truncate">{chat.message}</p>
-                        <Badge 
-                          variant="secondary" 
-                          className={`mt-1 text-xs ${
-                            chat.status === 'resolved' ? 'bg-green-100 text-green-800' :
-                            chat.status === 'active' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}
-                        >
-                          {chat.status === 'resolved' ? 'Решен' : 
-                           chat.status === 'active' ? 'Активен' : 'Ожидает'}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">Статус сервера</span>
+                    <Badge className="bg-green-100 text-green-800">Активен</Badge>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">ИИ-модель</span>
+                    <Badge variant="outline">{selectedModel}</Badge>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">Автоответ</span>
+                    <Badge className={autoResponse ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                      {autoResponse ? 'Включен' : 'Выключен'}
+                    </Badge>
+                  </div>
+                  
+                  <Separator />
+                  
+                  <Alert>
+                    <Icon name="Info" size={16} />
+                    <AlertDescription className="text-sm">
+                      Сервер готов к получению сообщений по API и их обработке через ИИ-агента.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              </CardContent>
+            </Card>
+            
+            {/* Example Request */}
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <CardTitle className="text-foreground flex items-center gap-2">
+                  <Icon name="FileText" size={20} />
+                  Пример запроса
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-foreground">cURL</Label>
+                  <pre className="bg-muted rounded-lg p-3 text-xs text-foreground overflow-x-auto">
+{`curl -X POST https://api.server.com/v1/messages \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -d '{
+    "user_id": "user_123",
+    "message": "Как оформить возврат?",
+    "widget_id": "widget_456"
+  }'`}
+                  </pre>
                 </div>
               </CardContent>
             </Card>
